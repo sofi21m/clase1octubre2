@@ -43,7 +43,7 @@ with st.sidebar:
         "Herramienta:",
         ("freedraw", "line", "rect", "circle"),
         format_func=lambda x: {
-            "freedraw": "✏️️ Lápiz libre",
+            "freedraw": "✏️ Lápiz libre",
             "line": "📏 Línea recta",
             "rect": "⬛ Rectángulo",
             "circle": "⚪ Círculo"
@@ -70,9 +70,12 @@ canvas_result = st_canvas(
     key="canvas_gemini",
 )
 
-# Permite descargar el boceto original (Verificación segura)
-if canvas_result is not None and canvas_result.image_data is not None:
-    img_array = np.array(canvas_result.image_data).astype(np.uint8)
+# Extracción segura de la imagen del lienzo
+image_data = getattr(canvas_result, "image_data", None)
+
+# Permite descargar el boceto original
+if image_data is not None:
+    img_array = np.array(image_data).astype(np.uint8)
     drawing_image = Image.fromarray(img_array)
     
     buffer = io.BytesIO()
@@ -93,27 +96,27 @@ gemini_api_key = st.text_input('Ingresa tu API Key de Google Gemini', type="pass
 
 analyze_button = st.button("✨ Transformar boceto con Gemini", type="primary")
 
-# Verificación segura al hacer clic en el botón
+# Verificación al hacer clic
 if analyze_button:
     if not gemini_api_key:
         st.warning("Por favor ingresa tu API key de Google Gemini para continuar.")
-    elif canvas_result is None or canvas_result.image_data is None:
+    elif image_data is None:
         st.warning("Por favor dibuja algo en el lienzo antes de continuar.")
     else:
         with st.spinner("Gemini está analizando tu dibujo y creando la ilustración..."):
             try:
-                # 1. Convertir la imagen del lienzo a bytes PNG
-                input_numpy_array = np.array(canvas_result.image_data).astype('uint8')
+                # 1. Convertir la imagen a bytes PNG
+                input_numpy_array = np.array(image_data).astype('uint8')
                 pil_image = Image.fromarray(input_numpy_array).convert('RGB')
                 
                 img_byte_arr = io.BytesIO()
                 pil_image.save(img_byte_arr, format='PNG')
                 img_bytes = img_byte_arr.getvalue()
 
-                # 2. Inicializar el cliente de Gemini
+                # 2. Inicializar cliente Gemini
                 client = genai.Client(api_key=gemini_api_key)
 
-                # 3. Preparar los datos
+                # 3. Preparar imagen y prompt
                 image_part = types.Part.from_bytes(
                     data=img_bytes,
                     mime_type='image/png'
@@ -133,12 +136,12 @@ if analyze_button:
                 descripcion_boceto = response.text
                 st.success("¡Gemini entendió tu dibujo!")
 
-                # 5. Generar la ilustración con Pollinations.ai
+                # 5. Generar la ilustración final
                 prompt_final = f"A beautiful children's book illustration, vibrant colors, fantasy style: {descripcion_boceto}"
                 prompt_encoded = urllib.parse.quote(prompt_final)
                 url_imagen = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
 
-                # Mostrar resultado final
+                # Mostrar resultado
                 st.subheader("🖼️ ¡Mira tu dibujo convertido en arte!")
                 st.image(url_imagen, caption="Ilustración generada a partir de la interpretación de Gemini")
 
