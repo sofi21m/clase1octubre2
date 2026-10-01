@@ -9,21 +9,18 @@ import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 from openai import OpenAI
 
-Expert = " "
-profile_imgenh = " "
-
 def encode_image_to_base64(img_bytes):
     return base64.b64encode(img_bytes).decode("utf-8")
 
 # Configuración principal de la página
 st.set_page_config(page_title='Tablero Inteligente', layout="centered")
-st.title('🎨 Tablero Inteligente: De Boceto a Cuento')
+st.title('🎨 Tablero Mágico: De Boceto a Imagen')
 
 # Barra lateral con herramientas de dibujo
 with st.sidebar:
     st.subheader("🛠️ Herramientas de Arte")
     
-    # 1. Selección de colores múltiple para niños
+    # Selección de colores múltiple para niños
     st.subheader("🌈 Elige un color para pintar")
     colores_divertidos = {
         "🔴 Rojo": "#FF0000",
@@ -41,10 +38,10 @@ with st.sidebar:
     color_base = colores_divertidos[opcion_color]
     stroke_color = st.color_picker("O personaliza el color aquí:", value=color_base)
 
-    # 2. Grosor del pincel
+    # Grosor del pincel
     stroke_width = st.slider('Selecciona el ancho de línea', 1, 30, 8)
     
-    # 3. Herramienta de dibujo
+    # Herramienta de dibujo
     drawing_mode = st.selectbox(
         "Herramienta:",
         ("freedraw", "line", "rect", "circle"),
@@ -60,7 +57,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("Acerca de:")
-    st.write("Dibuja tu boceto en el panel. La IA interpretará la imagen y creará un cuento infantil inspirado en tu dibujo.")
+    st.write("Dibuja tu boceto en el panel. La IA interpretará la imagen y la transformará en una ilustración profesional.")
 
 st.subheader("👇 Dibuja tu boceto en el panel")
 
@@ -73,10 +70,10 @@ canvas_result = st_canvas(
     height=350,
     width=500,
     drawing_mode=drawing_mode,
-    key="canvas_cuento",
+    key="canvas_openai",
 )
 
-# Extracción segura de la imagen del lienzo para evitar fallos al cargar
+# Extracción segura de la imagen del lienzo
 image_data = getattr(canvas_result, "image_data", None)
 
 # Permite descargar el boceto original
@@ -102,16 +99,16 @@ ke = st.text_input('Ingresa tu Clave de OpenAI', type="password")
 os.environ['OPENAI_API_KEY'] = ke
 api_key = os.environ.get('OPENAI_API_KEY')
 
-analyze_button = st.button("✨ Analizar la imagen y crear cuento", type="primary")
+analyze_button = st.button("✨ Transformar boceto en una Ilustración", type="primary")
 
-# Verificación y generación de cuento
+# Generación de la nueva imagen
 if analyze_button:
     if not api_key:
         st.warning("Por favor ingresa tu API key de OpenAI para continuar.")
     elif image_data is None:
         st.warning("Por favor dibuja algo en el lienzo antes de continuar.")
     else:
-        with st.spinner("Analizando tu dibujo y escribiendo una historia..."):
+        with st.spinner("Interpretando el boceto y creando la ilustración con DALL-E 3..."):
             try:
                 # 1. Convertir la imagen a bytes PNG y luego a Base64
                 input_numpy_array = np.array(image_data).astype('uint8')
@@ -121,19 +118,21 @@ if analyze_button:
                 pil_image.save(img_byte_arr, format='PNG')
                 base64_image = encode_image_to_base64(img_byte_arr.getvalue())
 
-                # 2. Prompt indicándole a GPT que redacte el cuento en español
-                prompt_text = "Escribe un cuento corto e ilustrativo para niños basado en este dibujo, en idioma español."
-
-                # 3. Llamada al cliente de OpenAI
                 client = OpenAI(api_key=api_key)
-                
-                response = client.chat.completions.create(
+
+                # 2. Paso 1: GPT-4o-mini analiza la imagen y crea una descripción detallada
+                prompt_vision = (
+                    "Describe en detalle los objetos, personajes, colores y "
+                    "escenario de este dibujo infantil para crear un prompt de imagen en estilo libro ilustrado para niños."
+                )
+
+                vision_response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[
                         {
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": prompt_text},
+                                {"type": "text", "text": prompt_vision},
                                 {
                                     "type": "image_url",
                                     "image_url": {
@@ -143,17 +142,27 @@ if analyze_button:
                             ],
                         }
                     ],
-                    max_tokens=500,
+                    max_tokens=300,
                 )
-                
-                # 4. Mostrar el cuento generado en la pantalla
-                cuento = response.choices[0].message.content
-                
-                st.subheader("📖 Tu Cuento Mágico")
-                st.markdown(cuento)
 
-                if Expert == profile_imgenh:
-                    st.session_state.mi_respuesta = cuento
+                descripcion_boceto = vision_response.choices[0].message.content
+
+                # 3. Paso 2: DALL-E 3 genera la nueva imagen ilustrada a partir de la descripción
+                prompt_dalle = f"A vibrant, high quality children's book illustration based on: {descripcion_boceto}"
+                
+                image_response = client.images.generate(
+                    model="dalle-3",
+                    prompt=prompt_dalle,
+                    size="1024x1024",
+                    quality="standard",
+                    n=1,
+                )
+
+                url_imagen_generada = image_response.data[0].url
+
+                # 4. Mostrar la ilustración creada
+                st.subheader("🖼️ ¡Mira tu dibujo convertido en arte!")
+                st.image(url_imagen_generada, caption="Ilustración generada con DALL-E 3")
 
             except Exception as e:
                 st.error(f"Ocurrió un error al procesar la solicitud: {e}")
