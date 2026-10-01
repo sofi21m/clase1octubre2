@@ -1,6 +1,18 @@
+import sys
+import os
+
+# Forzar la codificación estándar del sistema a UTF-8
+if sys.version_info[0] >= 3:
+    import _thread
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 import io
 import base64
-import urllib.parse
+import requests
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -99,7 +111,6 @@ api_key_input = st.text_input('Ingresa tu Clave de OpenAI', type="password")
 
 analyze_button = st.button("✨ Transformar boceto en una Ilustración", type="primary")
 
-# Generación de la nueva imagen
 if analyze_button:
     clean_api_key = api_key_input.strip() if api_key_input else ""
     
@@ -110,7 +121,7 @@ if analyze_button:
     else:
         with st.spinner("Interpretando el boceto y creando la ilustración con DALL-E 2..."):
             try:
-                # 1. Convertir la imagen del lienzo a bytes PNG y Base64
+                # 1. Convertir la imagen a bytes PNG y Base64
                 input_numpy_array = np.array(image_data).astype('uint8')
                 pil_image = Image.fromarray(input_numpy_array).convert('RGB')
                 
@@ -118,10 +129,8 @@ if analyze_button:
                 pil_image.save(img_byte_arr, format='PNG')
                 base64_image = encode_image_to_base64(img_byte_arr.getvalue())
 
-                # 2. Inicializar el cliente de OpenAI de forma limpia
+                # 2. Paso 1: Visión con GPT-4o-mini usando cliente SDK
                 client = OpenAI(api_key=clean_api_key)
-
-                # 3. Solicitud de análisis de visión en UTF-8 puro
                 prompt_vision = "Describe in detail the drawing for a children book illustration prompt."
 
                 vision_response = client.chat.completions.create(
@@ -145,22 +154,31 @@ if analyze_button:
 
                 descripcion_boceto = vision_response.choices[0].message.content
 
-                # 4. Construcción limpia del prompt para DALL-E 2 sin conversor ASCII
+                # 3. Paso 2: Petición HTTP directa en UTF-8 a DALL-E 2 (evita errores ASCII)
                 prompt_dalle = f"A vibrant high quality childrens book illustration based on: {descripcion_boceto}"
                 
-                image_response = client.images.generate(
-                    model="dall-e-2",
-                    prompt=prompt_dalle,
-                    size="1024x1024",
-                    n=1,
-                )
+                headers = {
+                    "Authorization": f"Bearer {clean_api_key}",
+                    "Content-Type": "application/json; charset=utf-8"
+                }
+                
+                payload = {
+                    "model": "dall-e-2",
+                    "prompt": prompt_dalle,
+                    "size": "1024x1024",
+                    "n": 1
+                }
 
-                url_imagen_generada = image_response.data[0].url
+                res = requests.post("https://api.openai.com/v1/images/generations", json=payload, headers=headers)
+                res_json = res.json()
 
-                # 5. Mostrar resultado
-                st.subheader("🖼️ ¡Mira tu dibujo convertido en arte!")
-                st.image(url_imagen_generada, caption="Ilustración generada con DALL-E 2")
+                if "data" in res_json and len(res_json["data"]) > 0:
+                    url_imagen_generada = res_json["data"][0]["url"]
+                    st.subheader("🖼️ ¡Mira tu dibujo convertido en arte!")
+                    st.image(url_imagen_generada, caption="Ilustración generada con DALL-E 2")
+                else:
+                    msg_error = res_json.get("error", {}).get("message", "Error desconocido")
+                    st.error(f"Error al generar la imagen: {msg_error}")
 
             except Exception as e:
-                # Se utiliza repr() para evitar errores de formato al imprimir la excepción
-                st.error(f"Ocurrió un error al procesar la solicitud: {repr(e)}")
+                st.error("Ocurrió un error al procesar la solicitud.")
