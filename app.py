@@ -57,7 +57,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("Acerca de:")
-    st.write("Dibuja tu boceto en el panel. La IA interpretará la imagen y la transformará en una ilustración profesional.")
+    st.write("Dibuja tu boceto en el panel. La IA interpretará la imagen y la transformará en una ilustración.")
 
 st.subheader("👇 Dibuja tu boceto en el panel")
 
@@ -108,7 +108,7 @@ if analyze_button:
     elif image_data is None:
         st.warning("Por favor dibuja algo en el lienzo antes de continuar.")
     else:
-        with st.spinner("Interpretando el boceto y creando la ilustración con DALL-E 3..."):
+        with st.spinner("Interpretando el boceto y creando la ilustración con DALL-E 2..."):
             try:
                 # 1. Convertir la imagen a bytes PNG y luego a Base64
                 input_numpy_array = np.array(image_data).astype('uint8')
@@ -147,14 +147,13 @@ if analyze_button:
 
                 descripcion_boceto = vision_response.choices[0].message.content
 
-                # 3. Paso 2: DALL-E 3 genera la nueva imagen ilustrada a partir de la descripción
+                # 3. Paso 2: Generar la imagen con DALL-E 2
                 prompt_dalle = f"A vibrant, high quality children's book illustration based on: {descripcion_boceto}"
                 
                 image_response = client.images.generate(
-                    model="dalle-3",
+                    model="dall-e-2",
                     prompt=prompt_dalle,
                     size="1024x1024",
-                    quality="standard",
                     n=1,
                 )
 
@@ -162,7 +161,7 @@ if analyze_button:
 
                 # 4. Mostrar la ilustración creada
                 st.subheader("🖼️ ¡Mira tu dibujo convertido en arte!")
-                st.image(url_imagen_generada, caption="Ilustración generada con DALL-E 3")
+                st.image(url_imagen_generada, caption="Ilustración generada con DALL-E 2")
 
             except Exception as e:
                 st.error(f"Ocurrió un error al procesar la solicitud: {e}")
