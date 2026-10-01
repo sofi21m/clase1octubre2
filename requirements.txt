@@ -1,9 +1,6 @@
-streamlit 
-openai
-tensorflow 
-matplotlib 
-#streamlit-drawable-canvas 
-streamlit-drawable-canvas== 0.9.2
-#python_version == 3.9
-pip install google-genai
-
+streamlit
+streamlit-drawable-canvas
+google-genai
+pillow
+numpy
+pandas
