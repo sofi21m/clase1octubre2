@@ -1,23 +1,29 @@
 import os
 import io
-import urllib.parse
+import base64
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from PIL import Image
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
-from google import genai
-from google.genai import types
+from openai import OpenAI
+
+Expert = " "
+profile_imgenh = " "
+
+def encode_image_to_base64(img_bytes):
+    return base64.b64encode(img_bytes).decode("utf-8")
 
 # Configuración principal de la página
-st.set_page_config(page_title='Tablero Mágico con Gemini', layout="centered")
-st.title('🎨 Tablero Mágico con Google Gemini')
+st.set_page_config(page_title='Tablero Inteligente', layout="centered")
+st.title('🎨 Tablero Inteligente: De Boceto a Cuento')
 
 # Barra lateral con herramientas de dibujo
 with st.sidebar:
     st.subheader("🛠️ Herramientas de Arte")
     
-    # Selección de colores
+    # 1. Selección de colores múltiple para niños
     st.subheader("🌈 Elige un color para pintar")
     colores_divertidos = {
         "🔴 Rojo": "#FF0000",
@@ -35,10 +41,10 @@ with st.sidebar:
     color_base = colores_divertidos[opcion_color]
     stroke_color = st.color_picker("O personaliza el color aquí:", value=color_base)
 
-    # Grosor del pincel
+    # 2. Grosor del pincel
     stroke_width = st.slider('Selecciona el ancho de línea', 1, 30, 8)
     
-    # Herramienta de dibujo
+    # 3. Herramienta de dibujo
     drawing_mode = st.selectbox(
         "Herramienta:",
         ("freedraw", "line", "rect", "circle"),
@@ -54,7 +60,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.subheader("Acerca de:")
-    st.write("Dibuja tu boceto en el panel. **Gemini** interpretará la imagen y un generador la transformará en una ilustración mágica.")
+    st.write("Dibuja tu boceto en el panel. La IA interpretará la imagen y creará un cuento infantil inspirado en tu dibujo.")
 
 st.subheader("👇 Dibuja tu boceto en el panel")
 
@@ -67,10 +73,10 @@ canvas_result = st_canvas(
     height=350,
     width=500,
     drawing_mode=drawing_mode,
-    key="canvas_gemini",
+    key="canvas_cuento",
 )
 
-# Extracción segura de la imagen del lienzo
+# Extracción segura de la imagen del lienzo para evitar fallos al cargar
 image_data = getattr(canvas_result, "image_data", None)
 
 # Permite descargar el boceto original
@@ -91,59 +97,63 @@ if image_data is not None:
 
 st.markdown("---")
 
-# Clave API de Gemini
-gemini_api_key = st.text_input('Ingresa tu API Key de Google Gemini', type="password")
+# Clave API de OpenAI
+ke = st.text_input('Ingresa tu Clave de OpenAI', type="password")
+os.environ['OPENAI_API_KEY'] = ke
+api_key = os.environ.get('OPENAI_API_KEY')
 
-analyze_button = st.button("✨ Transformar boceto con Gemini", type="primary")
+analyze_button = st.button("✨ Analizar la imagen y crear cuento", type="primary")
 
-# Verificación al hacer clic
+# Verificación y generación de cuento
 if analyze_button:
-    if not gemini_api_key:
-        st.warning("Por favor ingresa tu API key de Google Gemini para continuar.")
+    if not api_key:
+        st.warning("Por favor ingresa tu API key de OpenAI para continuar.")
     elif image_data is None:
         st.warning("Por favor dibuja algo en el lienzo antes de continuar.")
     else:
-        with st.spinner("Gemini está analizando tu dibujo y creando la ilustración..."):
+        with st.spinner("Analizando tu dibujo y escribiendo una historia..."):
             try:
-                # 1. Convertir la imagen a bytes PNG
+                # 1. Convertir la imagen a bytes PNG y luego a Base64
                 input_numpy_array = np.array(image_data).astype('uint8')
                 pil_image = Image.fromarray(input_numpy_array).convert('RGB')
                 
                 img_byte_arr = io.BytesIO()
                 pil_image.save(img_byte_arr, format='PNG')
-                img_bytes = img_byte_arr.getvalue()
+                base64_image = encode_image_to_base64(img_byte_arr.getvalue())
 
-                # 2. Inicializar cliente Gemini
-                client = genai.Client(api_key=gemini_api_key)
+                # 2. Prompt indicándole a GPT que redacte el cuento en español
+                prompt_text = "Escribe un cuento corto e ilustrativo para niños basado en este dibujo, en idioma español."
 
-                # 3. Preparar imagen y prompt
-                image_part = types.Part.from_bytes(
-                    data=img_bytes,
-                    mime_type='image/png'
+                # 3. Llamada al cliente de OpenAI
+                client = OpenAI(api_key=api_key)
+                
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt_text},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/png;base64,{base64_image}",
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                    max_tokens=500,
                 )
+                
+                # 4. Mostrar el cuento generado en la pantalla
+                cuento = response.choices[0].message.content
+                
+                st.subheader("📖 Tu Cuento Mágico")
+                st.markdown(cuento)
 
-                prompt_vision = (
-                    "Describe en inglés de forma corta y muy detallada los objetos, personajes, colores y "
-                    "escenario de este dibujo infantil para crear un prompt de imagen en alta calidad estilo libro ilustrado para niños."
-                )
-
-                # 4. Enviar a Gemini 2.5 Flash
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=[image_part, prompt_vision]
-                )
-
-                descripcion_boceto = response.text
-                st.success("¡Gemini entendió tu dibujo!")
-
-                # 5. Generar la ilustración final
-                prompt_final = f"A beautiful children's book illustration, vibrant colors, fantasy style: {descripcion_boceto}"
-                prompt_encoded = urllib.parse.quote(prompt_final)
-                url_imagen = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
-
-                # Mostrar resultado
-                st.subheader("🖼️ ¡Mira tu dibujo convertido en arte!")
-                st.image(url_imagen, caption="Ilustración generada a partir de la interpretación de Gemini")
+                if Expert == profile_imgenh:
+                    st.session_state.mi_respuesta = cuento
 
             except Exception as e:
-                st.error(f"Ocurrió un error al procesar con Gemini: {e}")
+                st.error(f"Ocurrió un error al procesar la solicitud: {e}")
