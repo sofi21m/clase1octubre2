@@ -1,35 +1,23 @@
 import os
-import base64
 import io
+import urllib.parse
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from PIL import Image, ImageOps
+from PIL import Image
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
-import tensorflow as tf
-from openai import OpenAI
+from google import genai
+from google.genai import types
 
-Expert = " "
-profile_imgenh = " "
+# Configuración principal de la página
+st.set_page_config(page_title='Tablero Mágico con Gemini', layout="centered")
+st.title('🎨 Tablero Mágico con Google Gemini')
 
-def encode_image_to_base64(image_path):
-    try:
-        with open(image_path, "rb") as image_file:
-            encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
-            return encoded_image
-    except FileNotFoundError:
-        return "Error: La imagen no se encontró en la ruta especificada."
-
-# Configuración de la página
-st.set_page_config(page_title='Tablero Inteligente', layout="centered")
-st.title('🎨 Tablero Mágico: De Boceto a Imagen')
-
-# Barra lateral para herramientas
+# Barra lateral con herramientas de dibujo
 with st.sidebar:
     st.subheader("🛠️ Herramientas de Arte")
     
-    # Seleccionar colores
+    # Selección de colores
     st.subheader("🌈 Elige un color para pintar")
     colores_divertidos = {
         "🔴 Rojo": "#FF0000",
@@ -45,10 +33,12 @@ with st.sidebar:
     
     opcion_color = st.radio("Paleta rápida:", list(colores_divertidos.keys()))
     color_base = colores_divertidos[opcion_color]
-    stroke_color = st.color_picker("O personaliza el color:", value=color_base)
+    stroke_color = st.color_picker("O personaliza el color aquí:", value=color_base)
 
+    # Grosor del pincel
     stroke_width = st.slider('Selecciona el ancho de línea', 1, 30, 8)
     
+    # Herramienta de dibujo
     drawing_mode = st.selectbox(
         "Herramienta:",
         ("freedraw", "line", "rect", "circle"),
@@ -62,9 +52,13 @@ with st.sidebar:
     
     bg_color = st.color_picker("Color de fondo del papel", "#FFFFFF")
 
+    st.markdown("---")
+    st.subheader("Acerca de:")
+    st.write("Dibuja tu boceto en el panel. **Gemini** interpretará la imagen y un generador la transformará en una ilustración mágica.")
+
 st.subheader("👇 Dibuja tu boceto en el panel")
 
-# Creación del lienzo
+# Creación del lienzo interactivo
 canvas_result = st_canvas(
     fill_color="rgba(255, 165, 0, 0.3)",
     stroke_width=stroke_width,
@@ -73,10 +67,10 @@ canvas_result = st_canvas(
     height=350,
     width=500,
     drawing_mode=drawing_mode,
-    key="canvas_inteligente",
+    key="canvas_gemini",
 )
 
-# Descarga del dibujo original
+# Permite descargar el boceto original
 if canvas_result.image_data is not None:
     img_array = np.array(canvas_result.image_data).astype(np.uint8)
     drawing_image = Image.fromarray(img_array)
@@ -94,69 +88,48 @@ if canvas_result.image_data is not None:
 
 st.markdown("---")
 
-ke = st.text_input('Ingresa tu Clave de OpenAI', type="password")
-os.environ['OPENAI_API_KEY'] = ke
-api_key = os.environ.get('OPENAI_API_KEY')
+# Clave API de Gemini (Consíguela gratis en aistudio.google.com)
+gemini_api_key = st.text_input('Ingresa tu API Key de Google Gemini', type="password")
 
-analyze_button = st.button("✨ Transformar boceto en una Ilustración", type="primary")
+analyze_button = st.button("✨ Transformar boceto con Gemini", type="primary")
 
-if canvas_result.image_data is not None and api_key and analyze_button:
-    with st.spinner("Interpretando el boceto y generando la ilustración con DALL-E..."):
-        # 1. Guardar la imagen localmente
-        input_numpy_array = np.array(canvas_result.image_data)
-        input_image = Image.fromarray(input_numpy_array.astype('uint8'), 'RGBA')
-        input_image.save('img.png')
-        
-        base64_image = encode_image_to_base64("img.png")
-            
+if canvas_result.image_data is not None and gemini_api_key and analyze_button:
+    with st.spinner("Gemini está analizando tu dibujo y creando la ilustración..."):
         try:
-            client = OpenAI(api_key=api_key)
-            
-            # Paso 1: Pedir a GPT-4o-mini que describa detalladamente la imagen para DALL-E
-            prompt_vision = "Describe en detalle lo que hay en este dibujo infantil para usarlo como prompt de generación de imagen artística para niños en DALL-E. Sé muy claro con los objetos, formas y colores."
-            
-            vision_response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt_vision},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{base64_image}",
-                                },
-                            },
-                        ],
-                    }
-                ],
-                max_tokens=300,
+            # 1. Convertir los datos del lienzo a una imagen PIL RGB
+            input_numpy_array = np.array(canvas_result.image_data).astype('uint8')
+            pil_image = Image.fromarray(input_numpy_array).convert('RGB')
+
+            # 2. Inicializar el cliente de Gemini
+            client = genai.Client(api_key=gemini_api_key)
+
+            # 3. Prompt para pedirle a Gemini que interprete el dibujo
+            prompt_vision = (
+                "Describe en inglés de forma corta y muy detallada los objetos, personajes, colores y "
+                "escenario de este dibujo infantil para crear un prompt de imagen en alta calidad estilo libro ilustrado para niños."
             )
-            
-            descripcion_boceto = vision_response.choices[0].message.content
-            
-            # Paso 2: Usar DALL-E 3 para crear la nueva imagen con esa descripción
-            prompt_dalle = f"A colorful and high quality children's book illustration based on this description: {descripcion_boceto}"
-            
-            image_response = client.images.generate(
-                model="dalle-3",
-                prompt=prompt_dalle,
-                size="1024x1024",
-                quality="standard",
-                n=1,
+
+            # 4. Enviar imagen + prompt a Gemini 2.5 Flash
+            response = client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[pil_image, prompt_vision]
             )
-            
-            # Obtener la URL de la imagen generada
-            url_imagen_generada = image_response.data[0].url
-            
-            # Mostrar la imagen en Streamlit
+
+            descripcion_boceto = response.text
+            st.success("¡Gemini entendió tu dibujo!")
+
+            # 5. Generar la imagen ilustrada con Pollinations.ai usando la descripción de Gemini
+            prompt_final = f"A beautiful children's book illustration, vibrant colors, fantasy style: {descripcion_boceto}"
+            prompt_encoded = urllib.parse.quote(prompt_final)
+            url_imagen = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
+
+            # Mostrar resultado final
             st.subheader("🖼️ ¡Mira tu dibujo convertido en arte!")
-            st.image(url_imagen_generada, caption="Ilustración generada a partir de tu boceto")
+            st.image(url_imagen, caption="Ilustración generada a partir de la interpretación de Gemini")
 
         except Exception as e:
-            st.error(f"Ocurrió un error al procesar la solicitud: {e}")
+            st.error(f"Ocurrió un error al procesar con Gemini: {e}")
 
 else:
-    if analyze_button and not api_key:
-        st.warning("Por favor ingresa tu API key de OpenAI para poder continuar.")
+    if analyze_button and not gemini_api_key:
+        st.warning("Por favor ingresa tu API key de Google Gemini para continuar.")
