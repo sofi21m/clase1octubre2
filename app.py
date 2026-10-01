@@ -88,7 +88,7 @@ if canvas_result.image_data is not None:
 
 st.markdown("---")
 
-# Clave API de Gemini (Consíguela gratis en aistudio.google.com)
+# Clave API de Gemini
 gemini_api_key = st.text_input('Ingresa tu API Key de Google Gemini', type="password")
 
 analyze_button = st.button("✨ Transformar boceto con Gemini", type="primary")
@@ -96,29 +96,38 @@ analyze_button = st.button("✨ Transformar boceto con Gemini", type="primary")
 if canvas_result.image_data is not None and gemini_api_key and analyze_button:
     with st.spinner("Gemini está analizando tu dibujo y creando la ilustración..."):
         try:
-            # 1. Convertir los datos del lienzo a una imagen PIL RGB
+            # 1. Convertir la imagen del lienzo a bytes PNG
             input_numpy_array = np.array(canvas_result.image_data).astype('uint8')
             pil_image = Image.fromarray(input_numpy_array).convert('RGB')
+            
+            img_byte_arr = io.BytesIO()
+            pil_image.save(img_byte_arr, format='PNG')
+            img_bytes = img_byte_arr.getvalue()
 
             # 2. Inicializar el cliente de Gemini
             client = genai.Client(api_key=gemini_api_key)
 
-            # 3. Prompt para pedirle a Gemini que interprete el dibujo
+            # 3. Preparar los datos compatibles para Gemini
+            image_part = types.Part.from_bytes(
+                data=img_bytes,
+                mime_type='image/png'
+            )
+
             prompt_vision = (
                 "Describe en inglés de forma corta y muy detallada los objetos, personajes, colores y "
                 "escenario de este dibujo infantil para crear un prompt de imagen en alta calidad estilo libro ilustrado para niños."
             )
 
-            # 4. Enviar imagen + prompt a Gemini 2.5 Flash
+            # 4. Enviar a Gemini 2.5 Flash
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
-                contents=[pil_image, prompt_vision]
+                contents=[image_part, prompt_vision]
             )
 
             descripcion_boceto = response.text
             st.success("¡Gemini entendió tu dibujo!")
 
-            # 5. Generar la imagen ilustrada con Pollinations.ai usando la descripción de Gemini
+            # 5. Generar la ilustración con Pollinations.ai usando la descripción de Gemini
             prompt_final = f"A beautiful children's book illustration, vibrant colors, fantasy style: {descripcion_boceto}"
             prompt_encoded = urllib.parse.quote(prompt_final)
             url_imagen = f"https://image.pollinations.ai/prompt/{prompt_encoded}?width=1024&height=1024&nologo=true"
