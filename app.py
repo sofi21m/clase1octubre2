@@ -9,7 +9,6 @@ import streamlit as st
 from streamlit_drawable_canvas import st_canvas
 import tensorflow as tf
 from openai import OpenAI
-import openai
 
 Expert = " "
 profile_imgenh = " "
@@ -24,13 +23,13 @@ def encode_image_to_base64(image_path):
 
 # Configuración de la página
 st.set_page_config(page_title='Tablero Inteligente', layout="centered")
-st.title('🎨 Tablero Mágico e Inteligente')
+st.title('🎨 Tablero Mágico: De Boceto a Imagen')
 
-# Barra lateral para herramientas y configuración
+# Barra lateral para herramientas
 with st.sidebar:
     st.subheader("🛠️ Herramientas de Arte")
     
-    # 1. Selección de colores múltiple para el niño
+    # Seleccionar colores
     st.subheader("🌈 Elige un color para pintar")
     colores_divertidos = {
         "🔴 Rojo": "#FF0000",
@@ -48,10 +47,8 @@ with st.sidebar:
     color_base = colores_divertidos[opcion_color]
     stroke_color = st.color_picker("O personaliza el color:", value=color_base)
 
-    # 2. Tamaño del pincel
     stroke_width = st.slider('Selecciona el ancho de línea', 1, 30, 8)
     
-    # 3. Herramientas de dibujo
     drawing_mode = st.selectbox(
         "Herramienta:",
         ("freedraw", "line", "rect", "circle"),
@@ -64,10 +61,6 @@ with st.sidebar:
     )
     
     bg_color = st.color_picker("Color de fondo del papel", "#FFFFFF")
-
-    st.markdown("---")
-    st.subheader("Acerca de:")
-    st.write("Dibuja en el lienzo usando los colores que quieras. La IA interpretará tu boceto y creará un cuento.")
 
 st.subheader("👇 Dibuja tu boceto en el panel")
 
@@ -83,58 +76,52 @@ canvas_result = st_canvas(
     key="canvas_inteligente",
 )
 
-# Sección para descargar la imagen dibujada
+# Descarga del dibujo original
 if canvas_result.image_data is not None:
-    # Convertir el arreglo del lienzo a imagen PNG
     img_array = np.array(canvas_result.image_data).astype(np.uint8)
     drawing_image = Image.fromarray(img_array)
     
-    # Guardar en memoria para descarga
     buffer = io.BytesIO()
     drawing_image.save(buffer, format="PNG")
     bytes_imagen = buffer.getvalue()
     
     st.download_button(
-        label="📥 Descargar mi dibujo (PNG)",
+        label="📥 Descargar mi dibujo original (PNG)",
         data=bytes_imagen,
-        file_name="mi_dibujo_magico.png",
+        file_name="mi_boceto.png",
         mime="image/png"
     )
 
 st.markdown("---")
 
-# Clave API y Botón de análisis
 ke = st.text_input('Ingresa tu Clave de OpenAI', type="password")
 os.environ['OPENAI_API_KEY'] = ke
 api_key = os.environ.get('OPENAI_API_KEY')
 
-analyze_button = st.button("✨ Analizar la imagen y crear cuento", type="primary")
+analyze_button = st.button("✨ Transformar boceto en una Ilustración", type="primary")
 
-# Proceso de análisis e integración con OpenAI
 if canvas_result.image_data is not None and api_key and analyze_button:
-    with st.spinner("Analizando tu dibujo y escribiendo una historia..."):
-        # Guardar la imagen localmente para el procesamiento
+    with st.spinner("Interpretando el boceto y generando la ilustración con DALL-E..."):
+        # 1. Guardar la imagen localmente
         input_numpy_array = np.array(canvas_result.image_data)
         input_image = Image.fromarray(input_numpy_array.astype('uint8'), 'RGBA')
         input_image.save('img.png')
         
-        # Codificar la imagen a base64
         base64_image = encode_image_to_base64("img.png")
             
-        prompt_text = "write a history for children based in the image in spanish"
-    
         try:
             client = OpenAI(api_key=api_key)
-            full_response = ""
-            message_placeholder = st.empty()
             
-            response = client.chat.completions.create(
+            # Paso 1: Pedir a GPT-4o-mini que describa detalladamente la imagen para DALL-E
+            prompt_vision = "Describe en detalle lo que hay en este dibujo infantil para usarlo como prompt de generación de imagen artística para niños en DALL-E. Sé muy claro con los objetos, formas y colores."
+            
+            vision_response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": prompt_text},
+                            {"type": "text", "text": prompt_vision},
                             {
                                 "type": "image_url",
                                 "image_url": {
@@ -144,15 +131,28 @@ if canvas_result.image_data is not None and api_key and analyze_button:
                         ],
                     }
                 ],
-                max_tokens=500,
+                max_tokens=300,
             )
             
-            if response.choices[0].message.content is not None:
-                full_response = response.choices[0].message.content
-                message_placeholder.markdown(full_response)
-                
-            if Expert == profile_imgenh:
-                st.session_state.mi_respuesta = full_response
+            descripcion_boceto = vision_response.choices[0].message.content
+            
+            # Paso 2: Usar DALL-E 3 para crear la nueva imagen con esa descripción
+            prompt_dalle = f"A colorful and high quality children's book illustration based on this description: {descripcion_boceto}"
+            
+            image_response = client.images.generate(
+                model="dalle-3",
+                prompt=prompt_dalle,
+                size="1024x1024",
+                quality="standard",
+                n=1,
+            )
+            
+            # Obtener la URL de la imagen generada
+            url_imagen_generada = image_response.data[0].url
+            
+            # Mostrar la imagen en Streamlit
+            st.subheader("🖼️ ¡Mira tu dibujo convertido en arte!")
+            st.image(url_imagen_generada, caption="Ilustración generada a partir de tu boceto")
 
         except Exception as e:
             st.error(f"Ocurrió un error al procesar la solicitud: {e}")
