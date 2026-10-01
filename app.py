@@ -120,10 +120,10 @@ if analyze_button:
 
                 client = OpenAI(api_key=api_key)
 
-                # 2. Paso 1: GPT-4o-mini analiza la imagen y crea una descripción detallada
+                # 2. Paso 1: GPT-4o-mini analiza la imagen en inglés para evitar caracteres especiales
                 prompt_vision = (
-                    "Describe en detalle los objetos, personajes, colores y "
-                    "escenario de este dibujo infantil para crear un prompt de imagen en estilo libro ilustrado para niños."
+                    "Describe in detail the objects, characters, colors, and layout of this "
+                    "children drawing to create an image generation prompt for a children's book illustration."
                 )
 
                 vision_response = client.chat.completions.create(
@@ -147,12 +147,13 @@ if analyze_button:
 
                 descripcion_boceto = vision_response.choices[0].message.content
 
-                # 3. Paso 2: Generar la imagen con DALL-E 2
+                # 3. Paso 2: Limpieza/Codificación del prompt para DALL-E
                 prompt_dalle = f"A vibrant, high quality children's book illustration based on: {descripcion_boceto}"
+                prompt_dalle_clean = prompt_dalle.encode('utf-8', errors='ignore').decode('utf-8')
                 
                 image_response = client.images.generate(
                     model="dall-e-2",
-                    prompt=prompt_dalle,
+                    prompt=prompt_dalle_clean,
                     size="1024x1024",
                     n=1,
                 )
