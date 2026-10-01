@@ -1,4 +1,3 @@
-import os
 import io
 import base64
 import numpy as np
@@ -20,7 +19,7 @@ st.title('🎨 Tablero Mágico: De Boceto a Imagen')
 with st.sidebar:
     st.subheader("🛠️ Herramientas de Arte")
     
-    # Selección de colores múltiple para niños
+    # Selección de colores
     st.subheader("🌈 Elige un color para pintar")
     colores_divertidos = {
         "🔴 Rojo": "#FF0000",
@@ -94,16 +93,17 @@ if image_data is not None:
 
 st.markdown("---")
 
-# Clave API de OpenAI
-ke = st.text_input('Ingresa tu Clave de OpenAI', type="password")
-os.environ['OPENAI_API_KEY'] = ke
-api_key = os.environ.get('OPENAI_API_KEY')
+# Clave API de OpenAI (sin guardar en os.environ para evitar errores de ASCII)
+api_key_input = st.text_input('Ingresa tu Clave de OpenAI', type="password")
 
 analyze_button = st.button("✨ Transformar boceto en una Ilustración", type="primary")
 
 # Generación de la nueva imagen
 if analyze_button:
-    if not api_key:
+    # Limpiamos espacios o caracteres raros en la API Key
+    clean_api_key = api_key_input.strip() if api_key_input else ""
+    
+    if not clean_api_key:
         st.warning("Por favor ingresa tu API key de OpenAI para continuar.")
     elif image_data is None:
         st.warning("Por favor dibuja algo en el lienzo antes de continuar.")
@@ -118,13 +118,11 @@ if analyze_button:
                 pil_image.save(img_byte_arr, format='PNG')
                 base64_image = encode_image_to_base64(img_byte_arr.getvalue())
 
-                client = OpenAI(api_key=api_key)
+                # 2. Inicializar cliente pasando la clave directamente
+                client = OpenAI(api_key=clean_api_key)
 
-                # 2. Paso 1: GPT-4o-mini analiza la imagen en inglés para evitar caracteres especiales
-                prompt_vision = (
-                    "Describe in detail the objects, characters, colors, and layout of this "
-                    "children drawing to create an image generation prompt for a children's book illustration."
-                )
+                # 3. Prompt estricto en inglés plano para evitar caracteres unicode
+                prompt_vision = "Describe in detail the objects, characters, colors, and layout of this children drawing to create an image generation prompt for a children book illustration."
 
                 vision_response = client.chat.completions.create(
                     model="gpt-4o-mini",
@@ -142,27 +140,27 @@ if analyze_button:
                             ],
                         }
                     ],
-                    max_tokens=300,
+                    max_tokens=250,
                 )
 
                 descripcion_boceto = vision_response.choices[0].message.content
 
-                # 3. Paso 2: Limpieza/Codificación del prompt para DALL-E
-                prompt_dalle = f"A vibrant, high quality children's book illustration based on: {descripcion_boceto}"
-                prompt_dalle_clean = prompt_dalle.encode('utf-8', errors='ignore').decode('utf-8')
+                # 4. Forzar que la descripción enviada a DALL-E contenga únicamente caracteres ASCII imprimibles
+                descripcion_ascii = descripcion_boceto.encode('ascii', 'ignore').decode('ascii')
+                prompt_dalle = f"A vibrant high quality childrens book illustration based on: {descripcion_ascii}"
                 
                 image_response = client.images.generate(
                     model="dall-e-2",
-                    prompt=prompt_dalle_clean,
+                    prompt=prompt_dalle,
                     size="1024x1024",
                     n=1,
                 )
 
                 url_imagen_generada = image_response.data[0].url
 
-                # 4. Mostrar la ilustración creada
+                # 5. Mostrar la ilustración creada
                 st.subheader("🖼️ ¡Mira tu dibujo convertido en arte!")
                 st.image(url_imagen_generada, caption="Ilustración generada con DALL-E 2")
 
             except Exception as e:
-                st.error(f"Ocurrió un error al procesar la solicitud: {e}")
+                st.error(f"Ocurrió un error al procesar la solicitud: {str(e)}")
